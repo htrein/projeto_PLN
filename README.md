@@ -1,10 +1,8 @@
 # INF01221 - Projeto PLN
 
-Este repositório contém a implementação e os scripts para reprodução dos experimentos de **Text-to-SQL** (Geração de consultas SQL a partir de linguagem natural) desenvolvidos para a disciplina de Processamento de Linguagem Natural. O projeto utiliza o dataset **Spider** e técnicas de **In-Context Learning (ICL)** para avaliar a capacidade de Modelos de Linguagem Pequenos (SLMs) rodando localmente (via Ollama) em gerar queries SQL corretas sem a necessidade de *fine-tuning*.
-
 ## Estrutura do Repositório
 
-- **`run_inference.py`**: Script principal de inferência. Gera os prompts, consulta o modelo (via Ollama) e salva as predições.
+- **`run_inference.py`**: Script principal de inferência. Gera os prompts, consulta o modelo e salva as predições.
 - **`prompts.py`**: Módulo de Engenharia de Prompt. Constrói o contexto (Zero-Shot ou Few-Shot) injetando o *schema* do banco de dados.
 - **`explore.py`**: Script utilitário para inspeção rápida de exemplos do dataset.
 - **`teste_avaliacao.py`**: Script de automação que formata os arquivos de saída (`gold.txt` e `pred.txt`) e executa o avaliador oficial.
@@ -19,8 +17,7 @@ Este repositório contém a implementação e os scripts para reprodução dos e
 Devido ao tamanho, o dataset não está incluído no controle de versão.
 
 1. Baixe o dataset **Spider 1.0**: [yale-lily.github.io/spider](https://yale-lily.github.io/spider)
-2. Extraia o conteúdo na raiz deste projeto e renomeie a pasta principal para `spider_data`.
-3. A estrutura de pastas deve ficar assim:
+2. A estrutura de pastas deve ficar assim:
    - `spider_data/dev.json`
    - `spider_data/train_spider.json`
    - `spider_data/tables.json`
@@ -37,6 +34,7 @@ sudo apt update
 sudo apt install -y python3 python3-venv python3-pip
 
 # Necessário apenas se for compilar o artigo LaTeX localmente:
+# Tem extensão pra LaTeX no VSCode
 sudo apt install -y texlive-latex-extra texlive-fonts-recommended texlive-lang-portuguese
 ```
 
@@ -56,19 +54,11 @@ python3 -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 
 ### 3. Configuração do Modelo (Ollama)
 
-Este projeto utiliza o Ollama para facilitar a execução de modelos locais (preservando privacidade e permitindo execução offline).
-
-Instale o Ollama conforme a [documentação oficial](https://ollama.ai).
-
-Baixe o modelo desejado (ex: Mistral ou Qwen):
-
-```bash
-ollama pull mistral
-```
+Por enquanto testei inferência com o Ollama Mistral
 
 ---
 
-## 🚀 Como Executar
+## Como Executar
 
 Certifique-se de que seu ambiente virtual está ativo:
 
