@@ -1,6 +1,7 @@
 #apenas verifica se os dados estão ok   
 
 import json
+import os
 import argparse
 import random
 from pathlib import Path
@@ -30,6 +31,18 @@ def show_examples(data, num=5, randomize=False):
         print(f"Pergunta (Input): {pergunta}")
         print(f"SQL Real (Target): {query}")
         print(f"ID do Banco de Dados: {db_id}")
+        
+        # Tenta buscar e mostrar o schema
+        try:
+            from schema_utils import get_schema_from_db
+            caminho_banco = os.path.join('spider_data', 'database', db_id, f"{db_id}.sqlite")
+            if os.path.exists(caminho_banco):
+                print("\n--- Schema ---")
+                print(get_schema_from_db(caminho_banco).strip())
+            else:
+                print(f"\n(Banco de dados não encontrado em: {caminho_banco})")
+        except Exception as e:
+            print(f"\n(Erro ao ler schema: {e})")
 
 
 def main():
