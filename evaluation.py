@@ -25,6 +25,10 @@ import json
 import sqlite3
 import traceback
 import argparse
+import multiprocessing  # <--- NEW IMPORT
+import time             # <--- NEW IMPORT
+
+import re
 
 from process_sql import tokenize, get_schema, get_tables_with_alias, Schema, get_sql
 
@@ -33,6 +37,8 @@ DISABLE_VALUE = True
 # Flag to disable distinct in select evaluation
 DISABLE_DISTINCT = True
 
+# Timeout for SQL execution in seconds (prevents hangs)
+EXEC_TIMEOUT = 5 
 
 CLAUSE_KEYWORDS = ('select', 'from', 'where', 'group', 'order', 'limit', 'intersect', 'union', 'except')
 JOIN_KEYWORDS = ('join', 'on', 'as')
@@ -54,6 +60,11 @@ HARDNESS = {
     "component1": ('where', 'group', 'order', 'limit', 'join', 'or', 'like'),
     "component2": ('except', 'union', 'intersect')
 }
+
+def remove_aliases(sql):
+    # Removes "AS alias" (case insensitive) followed by a word or quoted string
+    # Handles: AS total, AS "total", as 'total'
+    return re.sub(r'\s+AS\s+("[\w\s]+"|[\w]+)', '', sql, flags=re.IGNORECASE)
 
 
 def condition_has_or(conds):
@@ -433,6 +444,7 @@ class Evaluator:
 
 def isValidSQL(sql, db):
     conn = sqlite3.connect(db)
+    conn.text_factory = lambda b: b.decode(errors="ignore")
     cursor = conn.cursor()
     try:
         cursor.execute(sql)
@@ -500,6 +512,7 @@ def evaluate(gold, predict, db_dir, etype, kmaps):
     eval_err_num = 0
     for p, g in zip(plist, glist):
         p_str = p[0]
+        p_str = remove_aliases(p_str) # <--- ADD THIS LINE
         g_str, db = g
         db_name = db
         db = os.path.join(db_dir, db, db + ".sqlite")
@@ -532,7 +545,7 @@ def evaluate(gold, predict, db_dir, etype, kmaps):
             "where": []
             }
             eval_err_num += 1
-            print("eval_err_num:{}".format(eval_err_num))
+            # print("eval_err_num:{}".format(eval_err_num))
 
         # rebuild sql for value evaluation
         kmap = kmaps[db_name]
@@ -548,6 +561,11 @@ def evaluate(gold, predict, db_dir, etype, kmaps):
             if exec_score:
                 scores[hardness]['exec'] += 1.0
                 scores['all']['exec'] += 1.0
+            else:
+                # --- NOVO: Imprimir erro de execução ---
+                print("{} pred (Exec Err): {}".format(hardness, p_str))
+                print("{} gold (Exec Err): {}".format(hardness, g_str))
+                print("")
 
         if etype in ["all", "match"]:
             exact_score = evaluator.eval_exact_match(p_sql, g_sql)
@@ -611,19 +629,58 @@ def evaluate(gold, predict, db_dir, etype, kmaps):
     print_scores(scores, etype)
 
 
+# --- NEW: Helper function to run query in a separate process ---
+def execute_sql_child_process(db, sql, queue):
+    try:
+        conn = sqlite3.connect(db)
+        conn.text_factory = lambda b: b.decode(errors="ignore")
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        # Fetching a massive result set can still cause OOM in child
+        # If it dies, the queue remains empty and parent handles it.
+        p_res = cursor.fetchall()
+        queue.put(p_res)
+    except Exception as e:
+        # Pass exception string back to parent
+        queue.put("ERROR: " + str(e))
+    finally:
+        conn.close()
+
+
 def eval_exec_match(db, p_str, g_str, pred, gold):
     """
     return 1 if the values between prediction and gold are matching
     in the corresponding index. Currently not support multiple col_unit(pairs).
     """
-    conn = sqlite3.connect(db)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(p_str)
-        p_res = cursor.fetchall()
-    except:
-        return False
 
+    # --- UPDATED: Run predicted SQL in separate process with timeout ---
+    p_res = None
+    queue = multiprocessing.Queue()
+    p = multiprocessing.Process(target=execute_sql_child_process, args=(db, p_str, queue))
+    p.start()
+    p.join(timeout=EXEC_TIMEOUT)
+
+    if p.is_alive():
+        # Process timed out - kill it
+        p.terminate()
+        p.join()
+        return False  # Timeout count as incorrect
+
+    if queue.empty():
+        # Process died (OOM) or crashed without result
+        print(f"Error: Process crashed (likely OOM) for SQL: {p_str}") # <--- PRINT CRASH
+        return False
+    
+    p_res = queue.get()
+    
+    if isinstance(p_res, str) and p_res.startswith("ERROR"):
+        return False # Execution error count as incorrect
+    # -----------------------------------------------------------------
+
+    # Run Gold SQL (Trusted, usually fine to run in main process)
+    conn = sqlite3.connect(db)
+    conn.text_factory = lambda b: b.decode(errors="ignore")
+    cursor = conn.cursor()
     cursor.execute(g_str)
     q_res = cursor.fetchall()
 
